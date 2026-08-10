@@ -337,12 +337,15 @@ app.get('/api/admin/keys', verifyToken, verifyRole(['Admin', 'Developer']), asyn
     }
 });
 
+// Update License Key Generation API to use expiry_hours
 app.post('/api/admin/generate-key', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
-        const { expiry_days } = req.body;
+        const { expiry_hours } = req.body;
+        const hours = Number(expiry_hours) || 24; // default သို့မဟုတ် ပို့လာသည့် နာရီ
         const keyString = 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        
         const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + (expiry_days || 30));
+        expiryDate.setTime(expiryDate.getTime() + (hours * 60 * 60 * 1000));
 
         const newKey = new LicenseKey({ key_string: keyString, expiry_date: expiryDate });
         await newKey.save();
@@ -411,7 +414,6 @@ app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer
     }
 });
 
-// 1. Get All Codes API: GET /api/admin/codes/all
 app.get('/api/admin/codes/all', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const codes = await RedeemCode.find();
@@ -421,7 +423,6 @@ app.get('/api/admin/codes/all', verifyToken, verifyRole(['Admin', 'Developer']),
     }
 });
 
-// 2. Delete Code API: DELETE /api/admin/codes/:id
 app.delete('/api/admin/codes/:id', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const deletedCode = await RedeemCode.findByIdAndDelete(req.params.id);
@@ -496,7 +497,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with Redeem Code Management APIs is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with Expiry Hours is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
