@@ -21,7 +21,7 @@ const upload = multer({ dest: 'uploads/' });
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_123';
 
 // ==========================================
-// 6. DATABASE SCHEMAS & MODELS
+// DATABASE SCHEMAS & MODELS
 // ==========================================
 const UserSchema = new mongoose.Schema({
     username: { type: String, unique: true, required: true },
@@ -52,7 +52,7 @@ const LicenseKey = mongoose.model('LicenseKey', LicenseKeySchema);
 const PaymentSchema = new mongoose.Schema({
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     transaction_id: String,
-    amount: String,
+    amount: Number, // ရပ်ကွက်တွက်ချက်ရန် Number ပြောင်းထားသည်
     screenshot_url: String,
     ocr_text: String,
     status: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
@@ -130,10 +130,25 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// VIP Status အမြဲမှန်ကန်အောင် စစ်ဆေးပေးမည့် GET /api/auth/me Endpoint
 app.get('/api/auth/me', verifyToken, async (req, res) => {
     try {
         const user = await User.findById(req.user.id).select('-password_hash');
-        res.json({ success: true, user });
+        const now = new Date();
+        const isVip = user.vip_expiry && user.vip_expiry > now;
+
+        res.json({ 
+            success: true, 
+            user: {
+                _id: user._id,
+                username: user.username,
+                role: user.role,
+                vip_expiry: user.vip_expiry,
+                isVip: isVip,
+                is_banned: user.is_banned,
+                created_at: user.created_at
+            }
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -217,7 +232,7 @@ app.post('/api/payment/upload', verifyToken, upload.single('screenshot'), async 
         const payment = new Payment({
             user_id: req.user.id,
             transaction_id,
-            amount,
+            amount: Number(amount),
             screenshot_url: file.path,
             ocr_text: extractedText,
             status: 'pending'
@@ -249,6 +264,32 @@ app.get('/api/subscription/status', verifyToken, async (req, res) => {
         const now = new Date();
         const isVip = user.vip_expiry && user.vip_expiry > now;
         res.json({ success: true, vip_expiry: user.vip_expiry, isVip });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// User အတွက် Promotion Code ကို Redeem လုပ်ရန် API
+app.post('/api/promotions/redeem', verifyToken, async (req, res) => {
+    try {
+        const { code_name } = req.body;
+        const promo = await PromotionCode.findOne({ code_name });
+        if (!promo || promo.used_count >= promo.usage_limit) {
+            return res.status(400).json({ error: 'Invalid or expired promotion code' });
+        }
+
+        const user = await User.findById(req.user.id);
+        const now = new Date();
+        let currentExpiry = (user.vip_expiry && user.vip_expiry > now) ? user.vip_expiry : now;
+        
+        // ရက်ပေါင်းထည့်သွင်းခြင်း
+        user.vip_expiry = new Date(currentExpiry.getTime() + (promo.reward_days * 24 * 60 * 60 * 1000));
+        promo.used_count += 1;
+
+        await user.save();
+        await promo.save();
+
+        res.json({ success: true, message: `Successfully redeemed ${promo.reward_days} VIP days!` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -295,6 +336,34 @@ app.get('/api/admin/pending-payments', verifyToken, verifyRole(['Admin', 'Develo
     try {
         const payments = await Payment.find({ status: 'pending' }).populate('user_id', 'username');
         res.json({ success: true, payments });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin က Payment ကို အတည်ပြု (Approve) လုပ်ပြီး VIP ရက်တိုးပေးမည့် API
+app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
+    try {
+        const payment = await Payment.findById(req.params.paymentId);
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+        if (payment.status === 'success') return res.status(400).json({ error: 'Payment already approved' });
+
+        const user = await User.findById(payment.user_id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // ငွေပမာဏအလိုက် ရက်တွက်ချက်ခြင်း (ဥပမာ - 1000 ကျပ်လျှင် 1 ရက်၊ လိုသလို ပြင်နိုင်သည်)
+        const daysToAdd = Math.floor(payment.amount / 1000) || 1; 
+
+        const now = new Date();
+        let currentExpiry = (user.vip_expiry && user.vip_expiry > now) ? user.vip_expiry : now;
+        
+        user.vip_expiry = new Date(currentExpiry.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+        payment.status = 'success';
+
+        await user.save();
+        await payment.save();
+
+        res.json({ success: true, message: `Payment approved successfully. Added ${daysToAdd} VIP days to user.` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -358,7 +427,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with OCR & Roles is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with OCR, Roles & Approvals is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
