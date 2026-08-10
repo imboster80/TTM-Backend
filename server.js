@@ -80,7 +80,7 @@ const verifyToken = (req, res, next) => {
 
     if (token === HARDCODED_DEV_TOKEN) {
         req.user = { 
-            id: '000000000000000000000000', // MongoDB ObjectId format နှင့် ကိုက်ညီစေရန် သုည ၂၄ လုံး သုံးထားသည်
+            id: '000000000000000000000000', 
             username: 'MasterDeveloper', 
             role: 'Developer' 
         };
@@ -411,6 +411,29 @@ app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer
     }
 });
 
+// 1. Get All Codes API: GET /api/admin/codes/all
+app.get('/api/admin/codes/all', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
+    try {
+        const codes = await RedeemCode.find();
+        res.json({ success: true, codes });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Delete Code API: DELETE /api/admin/codes/:id
+app.delete('/api/admin/codes/:id', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
+    try {
+        const deletedCode = await RedeemCode.findByIdAndDelete(req.params.id);
+        if (!deletedCode) {
+            return res.status(404).json({ error: 'Redeem code not found' });
+        }
+        res.json({ success: true, message: 'Redeem code deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // ==========================================
 // 5. DEVELOPER (SUPER ADMIN) MASTER CONTROL
@@ -473,7 +496,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with ObjectId Fix is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with Redeem Code Management APIs is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
