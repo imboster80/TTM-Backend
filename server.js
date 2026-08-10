@@ -35,7 +35,7 @@ const UserSchema = new mongoose.Schema({
 const User = mongoose.model('User', UserSchema);
 
 const BotProfileSchema = new mongoose.Schema({
-    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     profile_name: String,
     bot_token: String,
     admin_id: String
@@ -61,10 +61,11 @@ const PaymentSchema = new mongoose.Schema({
 });
 const Payment = mongoose.model('Payment', PaymentSchema);
 
+// (၂) Promotion Schema တွင် reward_days ကို number အဖြစ် သေချာစစ်ဆေးခြင်း
 const PromotionCodeSchema = new mongoose.Schema({
-    code_name: { type: String, unique: true },
-    reward_days: Number,
-    usage_limit: Number,
+    code_name: { type: String, unique: true, required: true },
+    reward_days: { type: Number, required: true },
+    usage_limit: { type: Number, required: true },
     used_count: { type: Number, default: 0 }
 });
 const PromotionCode = mongoose.model('PromotionCode', PromotionCodeSchema);
@@ -78,7 +79,6 @@ const verifyToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Access token missing' });
 
-    // APK ဘက်မှ hardcoded dev token ဖြင့် တိုက်ရိုက်လာလျှင် Developer အဖြစ် သတ်မှတ်မည်
     if (token === HARDCODED_DEV_TOKEN) {
         req.user = { 
             id: 'dev_master_id', 
@@ -88,7 +88,6 @@ const verifyToken = (req, res, next) => {
         return next();
     }
 
-    // ပုံမှန် JWT Token စစ်ဆေးခြင်း
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ error: 'Invalid or expired token' });
         req.user = user;
@@ -109,13 +108,11 @@ const verifyRole = (roles) => {
 // ==========================================
 // 1. USER & AUTHENTICATION SYSTEM
 // ==========================================
-// Developer က Admin account တိုက်ရိုက်ဆောက်နိုင်ရန် (သို့မဟုတ် role ပေးနိုင်ရန်) ပြင်ဆင်ထားသည်
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, role } = req.body;
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // ပုံမှန် Register လုပ်လျှင် User ဖြစ်မည်။ သို့သော် role ပို့လာပါက ထည့်သွင်းပေးမည် (Admin/User)
         const assignedRole = role && ['User', 'Admin'].includes(role) ? role : 'User';
 
         const newUser = new User({
@@ -208,10 +205,16 @@ app.get('/api/profiles', verifyToken, async (req, res) => {
     }
 });
 
+// (၃) Bot Profile သိမ်းသည့်အခါ user_id နေရာတွင် req.user.id ကို အမြဲမှန်ကန်စွာ ထည့်သွင်းခြင်း
 app.post('/api/profiles', verifyToken, async (req, res) => {
     try {
         const { profile_name, bot_token, admin_id } = req.body;
-        const newProfile = new BotProfile({ user_id: req.user.id, profile_name, bot_token, admin_id });
+        const newProfile = new BotProfile({ 
+            user_id: req.user.id, 
+            profile_name, 
+            bot_token, 
+            admin_id 
+        });
         await newProfile.save();
         res.json({ success: true, message: 'Bot profile saved', profile: newProfile });
     } catch (err) {
@@ -394,12 +397,26 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
     }
 });
 
+// (၁) Promotion Creation ကို /api/admin/promotions သို့ ပြောင်းပြီး Admin နှင့် Developer ပါ ခွင့်ပြုပေးခြင်း
+app.post('/api/admin/promotions', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
+    try {
+        const { code_name, reward_days, usage_limit } = req.body;
+        const promo = new PromotionCode({ 
+            code_name, 
+            reward_days: Number(reward_days), 
+            usage_limit: Number(usage_limit) 
+        });
+        await promo.save();
+        res.json({ success: true, message: 'Promotion code created successfully', promo });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
 
 // ==========================================
 // 5. DEVELOPER (SUPER ADMIN) MASTER CONTROL
 // ==========================================
-
-// User များကို ကြည့်ရှုခြင်း (Developer Role သီးသန့် ကာကွယ်ထားသည်)
 app.get('/api/dev/users/all', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
         const users = await User.find().select('-password_hash');
@@ -409,7 +426,6 @@ app.get('/api/dev/users/all', verifyToken, verifyRole(['Developer']), async (req
     }
 });
 
-// User အချက်အလက်ပြင်ဆင်ခြင်း (Developer Role သီးသန့်)
 app.put('/api/dev/users/:id', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
         const updateData = { ...req.body };
@@ -424,32 +440,18 @@ app.put('/api/dev/users/:id', verifyToken, verifyRole(['Developer']), async (req
     }
 });
 
-// (၁) User Deletion API: Developer က User တစ်ယောက်ကို ဖျက်ရန်
 app.delete('/api/dev/users/:id', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
         const deletedUser = await User.findByIdAndDelete(req.params.id);
         if (!deletedUser) {
             return res.status(404).json({ error: 'User not found' });
         }
-        // သက်ဆိုင်ရာ user ရဲ့ bot profiles များနှင့် payments များကိုလည်း ရှင်းလင်းပေးနိုင်သည်
         await BotProfile.deleteMany({ user_id: req.params.id });
         await Payment.deleteMany({ user_id: req.params.id });
 
         res.json({ success: true, message: 'User deleted successfully by developer' });
     } catch (err) {
         res.status(500).json({ error: err.message });
-    }
-});
-
-// (၃) Promotion Code ဖန်တီးခြင်းကို Developer Role သီးသန့် ပိတ်ထားခြင်း
-app.post('/api/dev/promotions', verifyToken, verifyRole(['Developer']), async (req, res) => {
-    try {
-        const { code_name, reward_days, usage_limit } = req.body;
-        const promo = new PromotionCode({ code_name, reward_days, usage_limit });
-        await promo.save();
-        res.json({ success: true, message: 'Promotion code created', promo });
-    } catch (err) {
-        res.status(400).json({ error: err.message });
     }
 });
 
