@@ -19,6 +19,7 @@ mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI)
 
 const upload = multer({ dest: 'uploads/' });
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_123';
+const HARDCODED_DEV_TOKEN = process.env.HARDCODED_DEV_TOKEN || 'ttm_master_dev_token_2026';
 
 // ==========================================
 // DATABASE SCHEMAS & MODELS
@@ -52,7 +53,7 @@ const LicenseKey = mongoose.model('LicenseKey', LicenseKeySchema);
 const PaymentSchema = new mongoose.Schema({
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     transaction_id: String,
-    amount: Number, // ရပ်ကွက်တွက်ချက်ရန် Number ပြောင်းထားသည်
+    amount: Number,
     screenshot_url: String,
     ocr_text: String,
     status: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
@@ -77,6 +78,17 @@ const verifyToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Access token missing' });
 
+    // APK ဘက်မှ hardcoded dev token ဖြင့် တိုက်ရိုက်လာလျှင် Developer အဖြစ် သတ်မှတ်မည်
+    if (token === HARDCODED_DEV_TOKEN) {
+        req.user = { 
+            id: 'dev_master_id', 
+            username: 'MasterDeveloper', 
+            role: 'Developer' 
+        };
+        return next();
+    }
+
+    // ပုံမှန် JWT Token စစ်ဆေးခြင်း
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ error: 'Invalid or expired token' });
         req.user = user;
@@ -130,9 +142,24 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// VIP Status အမြဲမှန်ကန်အောင် စစ်ဆေးပေးမည့် GET /api/auth/me Endpoint
 app.get('/api/auth/me', verifyToken, async (req, res) => {
     try {
+        // Developer hardcoded token ဖြင့် ဝင်လာပါက mock object ပြန်ပေးရန်
+        if (req.user.id === 'dev_master_id') {
+            return res.json({
+                success: true,
+                user: {
+                    _id: 'dev_master_id',
+                    username: 'MasterDeveloper',
+                    role: 'Developer',
+                    vip_expiry: null,
+                    isVip: true,
+                    is_banned: false,
+                    created_at: new Date()
+                }
+            });
+        }
+
         const user = await User.findById(req.user.id).select('-password_hash');
         const now = new Date();
         const isVip = user.vip_expiry && user.vip_expiry > now;
@@ -222,7 +249,6 @@ app.post('/api/payment/upload', verifyToken, upload.single('screenshot'), async 
     try {
         const { transaction_id, amount } = req.body;
 
-        // Tesseract OCR Processing
         const worker = await createWorker('eng');
         const ret = await worker.recognize(file.path);
         await worker.terminate();
@@ -269,7 +295,6 @@ app.get('/api/subscription/status', verifyToken, async (req, res) => {
     }
 });
 
-// User အတွက် Promotion Code ကို Redeem လုပ်ရန် API
 app.post('/api/promotions/redeem', verifyToken, async (req, res) => {
     try {
         const { code_name } = req.body;
@@ -282,7 +307,6 @@ app.post('/api/promotions/redeem', verifyToken, async (req, res) => {
         const now = new Date();
         let currentExpiry = (user.vip_expiry && user.vip_expiry > now) ? user.vip_expiry : now;
         
-        // ရက်ပေါင်းထည့်သွင်းခြင်း
         user.vip_expiry = new Date(currentExpiry.getTime() + (promo.reward_days * 24 * 60 * 60 * 1000));
         promo.used_count += 1;
 
@@ -341,7 +365,6 @@ app.get('/api/admin/pending-payments', verifyToken, verifyRole(['Admin', 'Develo
     }
 });
 
-// Admin က Payment ကို အတည်ပြု (Approve) လုပ်ပြီး VIP ရက်တိုးပေးမည့် API
 app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const payment = await Payment.findById(req.params.paymentId);
@@ -351,7 +374,6 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
         const user = await User.findById(payment.user_id);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        // ငွေပမာဏအလိုက် ရက်တွက်ချက်ခြင်း (ဥပမာ - 1000 ကျပ်လျှင် 1 ရက်၊ လိုသလို ပြင်နိုင်သည်)
         const daysToAdd = Math.floor(payment.amount / 1000) || 1; 
 
         const now = new Date();
