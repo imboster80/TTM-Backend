@@ -61,14 +61,14 @@ const PaymentSchema = new mongoose.Schema({
 });
 const Payment = mongoose.model('Payment', PaymentSchema);
 
-// (၂) Promotion Schema တွင် reward_days ကို number အဖြစ် သေချာစစ်ဆေးခြင်း
-const PromotionCodeSchema = new mongoose.Schema({
-    code_name: { type: String, unique: true, required: true },
-    reward_days: { type: Number, required: true },
-    usage_limit: { type: Number, required: true },
+// (၁ & ၂) RedeemCode Table နှင့် Fields များ
+const RedeemCodeSchema = new mongoose.Schema({
+    code: { type: String, unique: true, required: true },
+    days: { type: Number, required: true },
+    max_uses: { type: Number, required: true },
     used_count: { type: Number, default: 0 }
 });
-const PromotionCode = mongoose.model('PromotionCode', PromotionCodeSchema);
+const RedeemCode = mongoose.model('RedeemCode', RedeemCodeSchema);
 
 
 // ==========================================
@@ -205,7 +205,6 @@ app.get('/api/profiles', verifyToken, async (req, res) => {
     }
 });
 
-// (၃) Bot Profile သိမ်းသည့်အခါ user_id နေရာတွင် req.user.id ကို အမြဲမှန်ကန်စွာ ထည့်သွင်းခြင်း
 app.post('/api/profiles', verifyToken, async (req, res) => {
     try {
         const { profile_name, bot_token, admin_id } = req.body;
@@ -301,25 +300,30 @@ app.get('/api/subscription/status', verifyToken, async (req, res) => {
     }
 });
 
-app.post('/api/promotions/redeem', verifyToken, async (req, res) => {
+// (၄) User API (သုံးရန်): POST /api/user/codes/redeem (Role: All Users)
+app.post('/api/user/codes/redeem', verifyToken, async (req, res) => {
     try {
-        const { code_name } = req.body;
-        const promo = await PromotionCode.findOne({ code_name });
-        if (!promo || promo.used_count >= promo.usage_limit) {
-            return res.status(400).json({ error: 'Invalid or expired promotion code' });
+        const { code } = req.body;
+        const codeDoc = await RedeemCode.findOne({ code });
+        
+        if (!codeDoc || codeDoc.used_count >= codeDoc.max_uses) {
+            return res.status(400).json({ error: 'Invalid or fully used redeem code' });
         }
 
         const user = await User.findById(req.user.id);
         const now = new Date();
         let currentExpiry = (user.vip_expiry && user.vip_expiry > now) ? user.vip_expiry : now;
         
-        user.vip_expiry = new Date(currentExpiry.getTime() + (promo.reward_days * 24 * 60 * 60 * 1000));
-        promo.used_count += 1;
+        // သတ်မှတ်ထားတဲ့ days ကို vip_expiry ထဲသို့ ပေါင်းထည့်ခြင်း
+        user.vip_expiry = new Date(currentExpiry.getTime() + (codeDoc.days * 24 * 60 * 60 * 1000));
+        
+        // used_count ကို ၁ တိုးပေးခြင်း
+        codeDoc.used_count += 1;
 
         await user.save();
-        await promo.save();
+        await codeDoc.save();
 
-        res.json({ success: true, message: `Successfully redeemed ${promo.reward_days} VIP days!` });
+        res.json({ success: true, message: `Successfully redeemed ${codeDoc.days} VIP days!` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -397,17 +401,17 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
     }
 });
 
-// (၁) Promotion Creation ကို /api/admin/promotions သို့ ပြောင်းပြီး Admin နှင့် Developer ပါ ခွင့်ပြုပေးခြင်း
-app.post('/api/admin/promotions', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
+// (၃) Admin API (ဆောက်ရန်): POST /api/admin/codes/create (Role: Admin/Developer)
+app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
-        const { code_name, reward_days, usage_limit } = req.body;
-        const promo = new PromotionCode({ 
-            code_name, 
-            reward_days: Number(reward_days), 
-            usage_limit: Number(usage_limit) 
+        const { code, days, max_uses } = req.body;
+        const newCode = new RedeemCode({ 
+            code, 
+            days: Number(days), 
+            max_uses: Number(max_uses) 
         });
-        await promo.save();
-        res.json({ success: true, message: 'Promotion code created successfully', promo });
+        await newCode.save();
+        res.json({ success: true, message: 'Redeem code created successfully', redeemCode: newCode });
     } catch (err) {
         res.status(400).json({ error: err.message });
     }
@@ -475,7 +479,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with OCR, Roles & Approvals is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with Redeem Code System is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
