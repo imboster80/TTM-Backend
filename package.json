@@ -1,18 +1,27 @@
 {
-  "name": "ttm-backend",
+  "name": "telegram-bot-backend",
   "version": "1.0.0",
+  "description": "Backend server with hours-based redeem/license, OCR payment, and captcha solver",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
+    "ddddocr": "^1.0.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.1",
     "multer": "^1.4.5-lts.1",
     "tesseract.js": "^5.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
