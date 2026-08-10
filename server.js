@@ -109,18 +109,22 @@ const verifyRole = (roles) => {
 // ==========================================
 // 1. USER & AUTHENTICATION SYSTEM
 // ==========================================
+// Developer က Admin account တိုက်ရိုက်ဆောက်နိုင်ရန် (သို့မဟုတ် role ပေးနိုင်ရန်) ပြင်ဆင်ထားသည်
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, role } = req.body;
         const hashedPassword = await bcrypt.hash(password, 10);
         
+        // ပုံမှန် Register လုပ်လျှင် User ဖြစ်မည်။ သို့သော် role ပို့လာပါက ထည့်သွင်းပေးမည် (Admin/User)
+        const assignedRole = role && ['User', 'Admin'].includes(role) ? role : 'User';
+
         const newUser = new User({
             username,
             password_hash: hashedPassword,
-            role: role && ['User', 'Admin', 'Developer'].includes(role) ? role : 'User'
+            role: assignedRole
         });
         await newUser.save();
-        res.json({ success: true, message: 'Account registered successfully' });
+        res.json({ success: true, message: `Account registered successfully as ${assignedRole}` });
     } catch (err) {
         res.status(400).json({ error: err.message });
     }
@@ -144,7 +148,6 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', verifyToken, async (req, res) => {
     try {
-        // Developer hardcoded token ဖြင့် ဝင်လာပါက mock object ပြန်ပေးရန်
         if (req.user.id === 'dev_master_id') {
             return res.json({
                 success: true,
@@ -395,6 +398,8 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
 // ==========================================
 // 5. DEVELOPER (SUPER ADMIN) MASTER CONTROL
 // ==========================================
+
+// User များကို ကြည့်ရှုခြင်း (Developer Role သီးသန့် ကာကွယ်ထားသည်)
 app.get('/api/dev/users/all', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
         const users = await User.find().select('-password_hash');
@@ -404,6 +409,7 @@ app.get('/api/dev/users/all', verifyToken, verifyRole(['Developer']), async (req
     }
 });
 
+// User အချက်အလက်ပြင်ဆင်ခြင်း (Developer Role သီးသန့်)
 app.put('/api/dev/users/:id', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
         const updateData = { ...req.body };
@@ -418,6 +424,24 @@ app.put('/api/dev/users/:id', verifyToken, verifyRole(['Developer']), async (req
     }
 });
 
+// (၁) User Deletion API: Developer က User တစ်ယောက်ကို ဖျက်ရန်
+app.delete('/api/dev/users/:id', verifyToken, verifyRole(['Developer']), async (req, res) => {
+    try {
+        const deletedUser = await User.findByIdAndDelete(req.params.id);
+        if (!deletedUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        // သက်ဆိုင်ရာ user ရဲ့ bot profiles များနှင့် payments များကိုလည်း ရှင်းလင်းပေးနိုင်သည်
+        await BotProfile.deleteMany({ user_id: req.params.id });
+        await Payment.deleteMany({ user_id: req.params.id });
+
+        res.json({ success: true, message: 'User deleted successfully by developer' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// (၃) Promotion Code ဖန်တီးခြင်းကို Developer Role သီးသန့် ပိတ်ထားခြင်း
 app.post('/api/dev/promotions', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
         const { code_name, reward_days, usage_limit } = req.body;
