@@ -61,7 +61,6 @@ const PaymentSchema = new mongoose.Schema({
 });
 const Payment = mongoose.model('Payment', PaymentSchema);
 
-// (၁ & ၂) RedeemCode Table နှင့် Fields များ
 const RedeemCodeSchema = new mongoose.Schema({
     code: { type: String, unique: true, required: true },
     days: { type: Number, required: true },
@@ -81,7 +80,7 @@ const verifyToken = (req, res, next) => {
 
     if (token === HARDCODED_DEV_TOKEN) {
         req.user = { 
-            id: 'dev_master_id', 
+            id: '000000000000000000000000', // MongoDB ObjectId format နှင့် ကိုက်ညီစေရန် သုည ၂၄ လုံး သုံးထားသည်
             username: 'MasterDeveloper', 
             role: 'Developer' 
         };
@@ -145,11 +144,11 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', verifyToken, async (req, res) => {
     try {
-        if (req.user.id === 'dev_master_id') {
+        if (req.user.id === '000000000000000000000000') {
             return res.json({
                 success: true,
                 user: {
-                    _id: 'dev_master_id',
+                    _id: '000000000000000000000000',
                     username: 'MasterDeveloper',
                     role: 'Developer',
                     vip_expiry: null,
@@ -300,7 +299,6 @@ app.get('/api/subscription/status', verifyToken, async (req, res) => {
     }
 });
 
-// (၄) User API (သုံးရန်): POST /api/user/codes/redeem (Role: All Users)
 app.post('/api/user/codes/redeem', verifyToken, async (req, res) => {
     try {
         const { code } = req.body;
@@ -314,10 +312,7 @@ app.post('/api/user/codes/redeem', verifyToken, async (req, res) => {
         const now = new Date();
         let currentExpiry = (user.vip_expiry && user.vip_expiry > now) ? user.vip_expiry : now;
         
-        // သတ်မှတ်ထားတဲ့ days ကို vip_expiry ထဲသို့ ပေါင်းထည့်ခြင်း
         user.vip_expiry = new Date(currentExpiry.getTime() + (codeDoc.days * 24 * 60 * 60 * 1000));
-        
-        // used_count ကို ၁ တိုးပေးခြင်း
         codeDoc.used_count += 1;
 
         await user.save();
@@ -401,7 +396,6 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
     }
 });
 
-// (၃) Admin API (ဆောက်ရန်): POST /api/admin/codes/create (Role: Admin/Developer)
 app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const { code, days, max_uses } = req.body;
@@ -479,7 +473,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with Redeem Code System is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with ObjectId Fix is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
