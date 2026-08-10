@@ -1,7 +1,7 @@
 {
   "name": "telegram-bot-backend",
   "version": "1.0.0",
-  "description": "Backend server with hours-based redeem/license, OCR payment, and captcha solver",
+  "description": "Backend server with hours-based redeem/license and OCR payment",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,7 +10,6 @@
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
-    "ddddocr": "^1.0.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
