@@ -4,6 +4,7 @@ const multer = require('multer');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { createWorker } = require('tesseract.js');
+const ddddocr = require('ddddocr');
 const cors = require('cors');
 const fs = require('fs');
 require('dotenv').config();
@@ -61,7 +62,6 @@ const PaymentSchema = new mongoose.Schema({
 });
 const Payment = mongoose.model('Payment', PaymentSchema);
 
-// (၁) Redeem Code Schema တွင် days နေရာ၌ hours (Number) သုံးခြင်း
 const RedeemCodeSchema = new mongoose.Schema({
     code: { type: String, unique: true, required: true },
     hours: { type: Number, required: true },
@@ -300,7 +300,6 @@ app.get('/api/subscription/status', verifyToken, async (req, res) => {
     }
 });
 
-// (၄) Redeem Logic တွင် hours ကိုအခြေခံ၍ vip_expiry သို့ ပေါင်းထည့်ခြင်း
 app.post('/api/user/codes/redeem', verifyToken, async (req, res) => {
     try {
         const { code } = req.body;
@@ -339,7 +338,6 @@ app.get('/api/admin/keys', verifyToken, verifyRole(['Admin', 'Developer']), asyn
     }
 });
 
-// (၃) Generate Key API: expiry_days အစား expiry_hours ကို လက်ခံပြီး နာရီအလိုက် တွက်ချက်ခြင်း
 app.post('/api/admin/generate-key', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const { expiry_hours } = req.body;
@@ -401,7 +399,6 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
     }
 });
 
-// (၂) Create Code API: hours ကို လက်ခံပြီး သိမ်းဆည်းခြင်း
 app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const { code, hours, max_uses } = req.body;
@@ -417,7 +414,6 @@ app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer
     }
 });
 
-// (၅) Admin APIs: GET All Codes နှင့် DELETE Code
 app.get('/api/admin/codes/all', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const codes = await RedeemCode.find();
@@ -441,7 +437,31 @@ app.delete('/api/admin/codes/:id', verifyToken, verifyRole(['Admin', 'Developer'
 
 
 // ==========================================
-// 5. DEVELOPER (SUPER ADMIN) MASTER CONTROL
+// 5. UTILS (CAPTCHA SOLVER)
+// ==========================================
+app.post('/api/utils/solve-captcha', express.raw({ type: 'application/octet-stream', limit: '5mb' }), async (req, res) => {
+    try {
+        const imageBuffer = req.body;
+        if (!imageBuffer || imageBuffer.length === 0) {
+            return res.status(400).json({ success: false, error: 'No image data provided' });
+        }
+
+        const ocrInstance = await ddddocr.create();
+        const result = await ocrInstance.classification(imageBuffer);
+
+        return res.json({
+            success: true,
+            message: result.trim()
+        });
+    } catch (err) {
+        console.error("Captcha Solve Error:", err);
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+
+// ==========================================
+// 6. DEVELOPER (SUPER ADMIN) MASTER CONTROL
 // ==========================================
 app.get('/api/dev/users/all', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
@@ -501,7 +521,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with Hours-Based System is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with Captcha & Hours-Based System is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
