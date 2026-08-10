@@ -61,9 +61,10 @@ const PaymentSchema = new mongoose.Schema({
 });
 const Payment = mongoose.model('Payment', PaymentSchema);
 
+// (၁) Redeem Code Schema တွင် days နေရာ၌ hours (Number) သုံးခြင်း
 const RedeemCodeSchema = new mongoose.Schema({
     code: { type: String, unique: true, required: true },
-    days: { type: Number, required: true },
+    hours: { type: Number, required: true },
     max_uses: { type: Number, required: true },
     used_count: { type: Number, default: 0 }
 });
@@ -299,6 +300,7 @@ app.get('/api/subscription/status', verifyToken, async (req, res) => {
     }
 });
 
+// (၄) Redeem Logic တွင် hours ကိုအခြေခံ၍ vip_expiry သို့ ပေါင်းထည့်ခြင်း
 app.post('/api/user/codes/redeem', verifyToken, async (req, res) => {
     try {
         const { code } = req.body;
@@ -312,13 +314,13 @@ app.post('/api/user/codes/redeem', verifyToken, async (req, res) => {
         const now = new Date();
         let currentExpiry = (user.vip_expiry && user.vip_expiry > now) ? user.vip_expiry : now;
         
-        user.vip_expiry = new Date(currentExpiry.getTime() + (codeDoc.days * 24 * 60 * 60 * 1000));
+        user.vip_expiry = new Date(currentExpiry.getTime() + (codeDoc.hours * 60 * 60 * 1000));
         codeDoc.used_count += 1;
 
         await user.save();
         await codeDoc.save();
 
-        res.json({ success: true, message: `Successfully redeemed ${codeDoc.days} VIP days!` });
+        res.json({ success: true, message: `Successfully redeemed ${codeDoc.hours} VIP hours!` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -337,11 +339,11 @@ app.get('/api/admin/keys', verifyToken, verifyRole(['Admin', 'Developer']), asyn
     }
 });
 
-// Update License Key Generation API to use expiry_hours
+// (၃) Generate Key API: expiry_days အစား expiry_hours ကို လက်ခံပြီး နာရီအလိုက် တွက်ချက်ခြင်း
 app.post('/api/admin/generate-key', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const { expiry_hours } = req.body;
-        const hours = Number(expiry_hours) || 24; // default သို့မဟုတ် ပို့လာသည့် နာရီ
+        const hours = Number(expiry_hours) || 24;
         const keyString = 'KEY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
         
         const expiryDate = new Date();
@@ -399,12 +401,13 @@ app.post('/api/admin/approve-payment/:paymentId', verifyToken, verifyRole(['Admi
     }
 });
 
+// (၂) Create Code API: hours ကို လက်ခံပြီး သိမ်းဆည်းခြင်း
 app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
-        const { code, days, max_uses } = req.body;
+        const { code, hours, max_uses } = req.body;
         const newCode = new RedeemCode({ 
             code, 
-            days: Number(days), 
+            hours: Number(hours), 
             max_uses: Number(max_uses) 
         });
         await newCode.save();
@@ -414,6 +417,7 @@ app.post('/api/admin/codes/create', verifyToken, verifyRole(['Admin', 'Developer
     }
 });
 
+// (၅) Admin APIs: GET All Codes နှင့် DELETE Code
 app.get('/api/admin/codes/all', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
     try {
         const codes = await RedeemCode.find();
@@ -497,7 +501,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with Expiry Hours is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server with Hours-Based System is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
