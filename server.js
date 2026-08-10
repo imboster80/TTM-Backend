@@ -4,7 +4,6 @@ const multer = require('multer');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { createWorker } = require('tesseract.js');
-const ddddocr = require('ddddocr');
 const cors = require('cors');
 const fs = require('fs');
 require('dotenv').config();
@@ -423,7 +422,7 @@ app.get('/api/admin/codes/all', verifyToken, verifyRole(['Admin', 'Developer']),
     }
 });
 
-app.delete('/api/admin/codes/:id', verifyToken, verifyRole(['Admin', 'Developer']), async (req, res) => {
+app.delete('/api/admin/codes/:id', verifyToken, verifyRole(['Admin', 'Developer']), async (res, req) => {
     try {
         const deletedCode = await RedeemCode.findByIdAndDelete(req.params.id);
         if (!deletedCode) {
@@ -437,31 +436,7 @@ app.delete('/api/admin/codes/:id', verifyToken, verifyRole(['Admin', 'Developer'
 
 
 // ==========================================
-// 5. UTILS (CAPTCHA SOLVER)
-// ==========================================
-app.post('/api/utils/solve-captcha', express.raw({ type: 'application/octet-stream', limit: '5mb' }), async (req, res) => {
-    try {
-        const imageBuffer = req.body;
-        if (!imageBuffer || imageBuffer.length === 0) {
-            return res.status(400).json({ success: false, error: 'No image data provided' });
-        }
-
-        const ocrInstance = await ddddocr.create();
-        const result = await ocrInstance.classification(imageBuffer);
-
-        return res.json({
-            success: true,
-            message: result.trim()
-        });
-    } catch (err) {
-        console.error("Captcha Solve Error:", err);
-        return res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-
-// ==========================================
-// 6. DEVELOPER (SUPER ADMIN) MASTER CONTROL
+// 5. DEVELOPER (SUPER ADMIN) MASTER CONTROL
 // ==========================================
 app.get('/api/dev/users/all', verifyToken, verifyRole(['Developer']), async (req, res) => {
     try {
@@ -521,7 +496,7 @@ app.get('/api/dev/dashboard-stats', verifyToken, verifyRole(['Developer']), asyn
 });
 
 // Root Health Check
-app.get('/', (req, res) => res.send("Full Backend Server with Captcha & Hours-Based System is Active!"));
+app.get('/', (req, res) => res.send("Full Backend Server is Active!"));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
